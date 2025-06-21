@@ -1,0 +1,161 @@
+---
+title: "Analyze cyclist stats"
+author: "Rebin Karaparambil"
+date: "2025-06-19"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(rstudioapi)
+library(dplyr)
+library(ggplot2)
+```
+
+## Cyclistic Bike-Share Analysis (May 2024 – April 2025)
+
+This notebook presents an exploratory data analysis of a year’s worth of bike-share usage data provided by Divvy. The goal is to understand the usage patterns between casual and subscribed memebers to improve strategic decision making and companies profitability.
+
+### Dataset
+The data set from the cyclist is available at the [link](https://divvy-tripdata.s3.amazonaws.com/index.html). In this project we analyse the data from May 2024 to April 2025. The datasets should be downloaded and the corresponding CSV files should be available in the folder named "csv_data" to proceed.
+
+```{r}
+script_path <- rstudioapi::getActiveDocumentContext()$path
+setwd(dirname(script_path))
+```
+
+Read the csv files in to separate data frames:
+```{r}
+files <- list.files("csv_data", pattern = "\\.csv$", full.names = TRUE)
+for (i in seq_along(files)) {
+  df_name <- paste0("df_", i)
+  assign(df_name, readr::read_csv(files[i], show_col_types = FALSE))
+}
+```
+
+### Check datasets and combine
+```{r}
+head(df_1)
+colnames(df_1)
+```
+Check whether column names in all data frames are similar, before we join all into a single data frame.
+```{r}
+dfs <- list(df_1, df_2, df_3, df_4, df_5, df_6, df_7, df_8, df_9, df_10, df_11, df_12)
+
+colnames_list <- lapply(dfs, colnames)
+all_same <- all(sapply(colnames_list, function(x) identical(x, colnames_list[[1]])))
+print(all_same)
+```
+Combine all data frames in to a single data frame as folows,
+```{r}
+combined_df <- dplyr::bind_rows(dfs)
+dplyr::glimpse(combined_df)
+```
+
+### Data cleaning and preparation
+Inspect the new table that has been created-
+```{r}
+colnames(combined_df)
+nrow(combined_df)
+dim(combined_df)
+head(combined_df)
+summary(combined_df)
+```
+Check for distinct classification in member_casual column-
+```{r}
+table(combined_df$member_casual)
+```
+There are 2112667 casual users and 3623217 who are subscribed to a membership.
+Check the start time column, and create separate columns for date, month, and week.
+```{r}
+head(combined_df$started_at)
+combined_df$date <- as.Date(combined_df$started_at)
+combined_df$month <- format(as.Date(combined_df$date), "%m")
+combined_df$day<- format(as.Date(combined_df$date), "%d")
+combined_df$year <- format(as.Date(combined_df$date), "%Y")
+combined_df$weekday <- format(as.Date(combined_df$date), "%A")
+colnames(combined_df)
+```
+Create a new column with the information on trip duration-
+```{r}
+combined_df$trip_duration <- difftime(combined_df$ended_at, combined_df$started_at, units = "secs")
+colnames(combined_df)
+class(combined_df$trip_duration)
+units(combined_df$trip_duration)
+```
+Convert difftime class to numeric for further analysis-
+```{r}
+combined_df$trip_duration <- as.numeric(combined_df$trip_duration, units = "secs")
+is.numeric(combined_df$trip_duration)
+```
+Check if there are negative ride duration for irrelevant entries (bikes being taken out of docks and checked for quality by Divvy etc.).
+```{r}
+sum(combined_df$trip_duration < 0)
+```
+There are 119 entries were the trip duration is less than zero, and we filter out these irrelevant entries and make a new data frame.
+
+```{r}
+combined_cldf <- filter(combined_df, trip_duration >= 0)
+sum(combined_cldf$trip_duration < 0)
+sum(combined_cldf$start_station_name == "HQ QR", na.rm = TRUE)
+nrow(combined_cldf)
+colnames(combined_cldf)
+```
+
+### Perform descriptive analysis, note all timings are in seconds.
+
+```{r}
+summary(combined_cldf$trip_duration)
+```
+
+The minimum rental duration is zero seconds, while the maximum is 93595 seconds. The average per time usage is 1013 seconds.
+```{r}
+aggregate(combined_cldf$trip_duration ~ combined_cldf$member_casual, FUN = mean)
+```
+
+Casual members on an average trip duration is 1471 seconds, where as subscribed members use relatively less with an anverage of 746 seconds.
+
+```{r}
+aggregate(combined_cldf$trip_duration ~ combined_cldf$member_casual, FUN = median)
+aggregate(combined_cldf$trip_duration ~ combined_cldf$member_casual, FUN = max)
+aggregate(combined_cldf$trip_duration ~ combined_cldf$member_casual, FUN = min)
+```
+Median and max usage of casual members is larger than the subscribed members.
+
+Order week days and compare rides-
+
+```{r}
+combined_cldf$weekday <- ordered(combined_cldf$weekday,
+  levels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+aggregate(combined_cldf$trip_duration ~ combined_cldf$member_casual + combined_cldf$weekday , FUN = mean)
+```
+
+Groupby rides as a function of member type and weekday in to a dataframe-
+```{r}
+summary_df <- combined_cldf %>%
+  group_by(member_casual, weekday) %>%
+  summarise(total_rides = n(), average_duration = mean(trip_duration)) %>%
+  arrange(member_casual, weekday)
+```
+### Summary and plots 
+```{r}
+head(summary_df)
+```
+```{r}
+ggplot(summary_df, mapping = aes(x = weekday, y = total_rides, fill = member_casual)) + geom_col(position = "dodge") + labs(title = "Total Rides by Weekday", y = "Total Rides", x = "Weekday", fill = "User Type")
+```
+```{r}
+ggplot(summary_df, mapping = aes(x = weekday, y = average_duration, fill = member_casual)) + geom_col(position = "dodge") + labs(title = "Average Trip Duration by Weekday", y = "Avg Duration (sec)", x = "Weekday", fill = "User Type")
+```
+
+## Conclusion
+
+Total rides by casual riders are larger than the regural or subscribed members. There are lot more casual riders riding during the week days compared to weekends, suggesting that they might be using it for work. The average trip duration increases during the week ends for both member types, suggesting that they are going out of the city. There is very good scope to increase the subscriber base as the data shows, but a more clear picture will only be available with age demographics or location/station based analysis.
+
+
+
+Export summary data frame as CSV for further analysis-
+```{r}
+write.csv(summary_df, "summary_df.csv", row.names = FALSE)
+```
+

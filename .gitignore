@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Ignore all files inside 'data/' and 'results/', but keep the folders
+csv_data/*
+
+# Allow the folders themselves to exist in Git
+!csv_data/.gitkeep
